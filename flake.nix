@@ -1,51 +1,57 @@
 {
   inputs = { nixpkgs.url = "github:NixOS/nixpkgs"; };
   description = "Fennel Language Server";
+  outputs = { self, nixpkgs, ... }:
+    let
+      supportedSystems =
+        [ "x86_64-linux" "x86_64-darwin" "aarch64-linux" "aarch64-darwin" ];
+      forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
+      nixpkgsFor = forAllSystems (system: import nixpkgs { inherit system; });
+    in {
+      packages = forAllSystems (system:
+        let pkgs = nixpkgsFor.${system};
+        in with pkgs; {
+          default = stdenv.mkDerivation {
+            pname = "fennel-ls";
+            version = "extra-hooks-2";
 
-  outputs = { self, nixpkgs }: {
+            src = fetchGit {
+              url = "https://git.sr.ht/~xerool/fennel-ls";
+              rev = "70e434839fdf9fad7512118d3f72e38aa8d3ca9f";
+            };
 
-    packages.x86_64-linux.default =
-      with import nixpkgs { system = "x86_64-linux"; };
-      stdenv.mkDerivation {
-        pname = "fennel-ls";
-        version = "extra-hooks-2";
+            nativeBuildInputs = [ luaPackages.fennel ];
 
-        src = fetchGit {
-          url = "https://git.sr.ht/~xerool/fennel-ls";
-          rev = "70e434839fdf9fad7512118d3f72e38aa8d3ca9f";
-        };
+            buildInputs = [ lua ];
 
-        nativeBuildInputs = [ luaPackages.fennel ];
+            LUA_PATH = "./src/?.lua;./src/?/init.lua";
+            FENNEL_PATH = "./src/?.fnl;./src/?/init.fnl";
 
-        buildInputs = [ lua ];
+            buildPhase = ''
+              runHook preBuild
 
-        LUA_PATH = "./src/?.lua;./src/?/init.lua";
-        FENNEL_PATH = "./src/?.fnl;./src/?/init.fnl";
+              echo "#!${lua}/bin/lua" > fennel-ls
+              ${luaPackages.fennel}/bin/fennel --require-as-include --compile src/fennel-ls.fnl >> fennel-ls
+              chmod +x fennel-ls
 
-        buildPhase = ''
-          runHook preBuild
+              runHook postBuild
+            '';
 
-          echo "#!${lua}/bin/lua" > fennel-ls
-          ${luaPackages.fennel}/bin/fennel --require-as-include --compile src/fennel-ls.fnl >> fennel-ls
-          chmod +x fennel-ls
+            installPhase = ''
+              runHook preInstall
 
-          runHook postBuild
-        '';
+              install -D ./fennel-ls $out/bin/fennel-ls
 
-        installPhase = ''
-          runHook preInstall
+              runHook postInstall
+            '';
 
-          install -D ./fennel-ls $out/bin/fennel-ls
-
-          runHook postInstall
-        '';
-
-        meta = with pkgs.lib; {
-          description = "Language Server for fennel";
-          homepage = "https://git.sr.ht/~xerool/fennel-ls";
-          license = licenses.mit;
-          platforms = lua.meta.platforms;
-        };
-      };
-  };
+            meta = with lib; {
+              description = "Language Server for fennel";
+              homepage = "https://git.sr.ht/~xerool/fennel-ls";
+              license = licenses.mit;
+              platforms = lua.meta.platforms;
+            };
+          };
+        });
+    };
 }
